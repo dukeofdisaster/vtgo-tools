@@ -1,7 +1,9 @@
 package main
 
 import (
-	"encoding/base64"
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -85,11 +87,15 @@ func main() {
 			//fmt.Printf("\nNew String: %s", _singleArg)
 		}
 
-		// we won't need a scan scanner unless the last scan date is too old.
-		// encoding the malicious URL as base64 is how we access the URL on vt
-		// (2) - supplied url will be identified by it's b64 encoded counterpart
-		//      in VT data
-		var urlID = base64.RawURLEncoding.EncodeToString([]byte(_singleArg))
+		// we won't need a scan scanner unless the last scan date is too old or URL doesn't exist.
+		// (2) - supplied url will be identified by it's sha256
+		// 	   - https://developers.virustotal.com/v3.0/reference#url
+		//	   - sha256 id is prefereed over base64 for consistent, clean results
+
+		shaobject := sha256.New()
+		shaobject.Write([]byte(_singleArg))
+		urlID := hex.EncodeToString(shaobject.Sum(nil))
+		//fmt.Println(hash)
 		//fmt.Println(urlID)
 
 		// (3) - Build a VT URL  out the urlID
@@ -98,40 +104,35 @@ func main() {
 		// build a URL for scans
 		//var newscanURL = vt.URL()
 		// (?) - with no scan we can use a simple GET
+		var urlDoesNotExist = false
+		var lastanal = int64(0)
+		var thirtydaysago = int64(0)
+		var dat map[string]interface{}
 		rawresponse, err := client.Get(noscanURL)
 		if err != nil {
-			log.Fatal(err)
+			log.Println("URL Didn't Exist...")
+			urlDoesNotExist = true
+			//fmt.Println("FATAL ERROR")
+		} else {
+			json.Unmarshal(rawresponse.Data, &dat)
+			lastanal = int64(dat["attributes"].(map[string]interface{})["last_analysis_date"].(float64))
+			thirtydaysago = int64(time.Now().Unix() - 2592000)
 		}
-
 		// Dump the json
 		//fmt.Printf("%s", rawresponse.Data)
-
-		// try to unmarshal the data into the var;
-		// this kinda works but we have to use ugly type assertions to get
-		// to the value
-		var dat map[string]interface{}
-		json.Unmarshal(rawresponse.Data, &dat)
-		//handle_it(err2)
-
-		// to get this to print just the regulat numerical value, we have to format
-		// print as a float...
-		// currently I see no other way of accessing everything other than just straight
-		// unmarshalling the shit repeatedly to an interface and doing the ugly ass type casting below
-		// should probably define a struct, but that seems way more involved...
-		// in short... Python > Go; all day
-		//fmt.Printf("%.0f\n", dat["attributes"].(map[string]interface{})["last_analysis_date"].(float64))
-		var lastanal = int64(dat["attributes"].(map[string]interface{})["last_analysis_date"].(float64))
 
 		// this will be type int64, so we'll cast it to float64
 		// 30 days in epoch = 2592000
 		// 1 day = 86400
-		thirtydaysago := time.Now().Unix() - 2592000
 
 		// we cast the analysis date to int64 to avoid format printing of float.
 		// if the last analysis date < our 30 day window time, we rescan, else, we collect data
-		if lastanal <= thirtydaysago {
-			fmt.Printf("\nOld Scan: ")
-			fmt.Println(time.Unix(lastanal, 0))
+		if lastanal <= thirtydaysago || urlDoesNotExist {
+			if lastanal != 0 {
+				fmt.Printf("\nOld Scan: ")
+				fmt.Println(time.Unix(lastanal, 0))
+			}
+
 			fmt.Println("Submitting URL for fresh scan...")
 
 			// Scanner has already been instantiated by this point... here we take
@@ -210,10 +211,24 @@ func main() {
 
 	// We don't have to validate -f  was given because flag lib does that on its own
 	if len(os.Args) == 3 {
+		if *filename == "" {
+			fmt.Println("No file given")
+			os.Exit(3)
+		}
 		fmt.Printf("Filename: %s", *filename)
-	}
-	if *filename == "" {
-		fmt.Println("No file given")
+		// Open the file we were given
+		file, err := os.Open(*filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		var lines []string
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		fmt.Println(lines[1])
 	}
 
 }
