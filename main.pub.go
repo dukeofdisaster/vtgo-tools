@@ -16,40 +16,6 @@ import (
 	vt "github.com/VirusTotal/vt-go"
 )
 
-//var fileSHA256 = flag.String("sha256", "", "SHA256 of some file")
-//var domain_string = flag.String("domain", "", "Some domain to investigate")
-
-type URLAttributes struct {
-	Categories          string            `json:"categories"`
-	FirstSubmissionDate uint16            `json:"first_submission_date"`
-	LastAnalysisDate    uint16            `json:"last_analysis_date"`
-	LastAnalysisResults map[string]Engine `json:"last_analysis_results"`
-	LastAnalysisStats   Stats             `json:"last_analysis_stats"`
-}
-
-type Stats struct {
-	Harmless   uint16 `json:"harmless"`
-	Malicious  uint16 `json:"malicious"`
-	Suspicious uint16 `json:"suspicious"`
-	Timeout    uint16 `json:"timeout"`
-	Undetected uint16 `json:"undetected"`
-}
-
-type Engine struct {
-	Category       string `json:"category"`
-	Engine_Name    string `json:"engine_name"`
-	Engine_update  string `json:"engine_update"`
-	Engine_version string `json:"engine_version"`
-	Method         string `json:"method"`
-	Result         string `json:"result"`
-}
-
-type ResponseDict struct {
-	Date    int
-	Results []Engine
-	stats   []Stats
-}
-
 // we use json.MarshlIndent to print the interface that's returned
 func prettyPrint(i interface{}) string {
 	s, _ := json.MarshalIndent(i, "", "\t")
@@ -62,6 +28,10 @@ func handle_it(v ...interface{}) {
 	}
 }
 
+func makeline() {
+	fmt.Println("===============")
+}
+
 func main() {
 	// We should check for the file flag first
 	// we have to use pointers to use these flag values
@@ -72,13 +42,13 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
+
 	// We can instantiate a client & scanner  outside of the rest of the logic,
 	//since we'll them one regardless
-	client := vt.NewClient("YOUR API KEY HERE")
+	client := vt.NewClient("YOUR-API-KEY HERE")
 	scanner := client.NewURLScanner()
 
 	if len(os.Args) == 2 {
-		//fmt.Println("2 args: program and one other")
 		_singleArg := os.Args[1]
 
 		// (1) - Validate the URL has a protocol identifier; if not, add it
@@ -87,11 +57,10 @@ func main() {
 			//fmt.Printf("\nNew String: %s", _singleArg)
 		}
 
-		// we won't need a scan scanner unless the last scan date is too old or URL doesn't exist.
 		// (2) - supplied url will be identified by it's sha256
 		// 	   - https://developers.virustotal.com/v3.0/reference#url
-		//	   - sha256 id is prefereed over base64 for consistent, clean results
-
+		//	   - sha256 id is preferred over base64 for consistent, clean results
+		fmt.Println("[+] Analyzing...: " + _singleArg)
 		shaobject := sha256.New()
 		shaobject.Write([]byte(_singleArg))
 		urlID := hex.EncodeToString(shaobject.Sum(nil))
@@ -125,7 +94,6 @@ func main() {
 		// 30 days in epoch = 2592000
 		// 1 day = 86400
 
-		// we cast the analysis date to int64 to avoid format printing of float.
 		// if the last analysis date < our 30 day window time, we rescan, else, we collect data
 		if lastanal <= thirtydaysago || urlDoesNotExist {
 			if lastanal != 0 {
@@ -170,7 +138,6 @@ func main() {
 			newdate := int64(newdateFloat)
 			fmt.Printf("New Scan Date: ")
 			fmt.Println(time.Unix(newdate, 0))
-			// S
 			fmt.Printf("Malicious: %s\n", resultsData.Attributes["stats"].(map[string]interface{})["malicious"])
 			fmt.Printf("Harmless: %s\n", resultsData.Attributes["stats"].(map[string]interface{})["harmless"])
 			// Note the link Id will always be the id of the url.. since this is a scan ID
@@ -178,7 +145,6 @@ func main() {
 			strippedID := strings.Split(analysisID, "-")
 			var newscanurl = "https://www.virustotal.com/#/url/" + strippedID[1] + "/detection"
 			fmt.Println("Link: " + newscanurl)
-			os.Exit(1)
 		} else {
 			fmt.Printf("Freshly Scanned: ")
 			fmt.Println(time.Unix(lastanal, 0))
@@ -206,6 +172,7 @@ func main() {
 
 		// Interestingly enough this value will automatically get printed as an actual date
 		//fmt.Printf("Object Attributes: %s", rawData.Attributes["last_analysis_date"])
+		makeline()
 		os.Exit(0)
 	}
 
@@ -215,12 +182,14 @@ func main() {
 			fmt.Println("No file given")
 			os.Exit(3)
 		}
+
 		fmt.Printf("Filename: %s", *filename)
-		// Open the file we were given
 		file, err := os.Open(*filename)
+
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		defer file.Close()
 
 		var lines []string
@@ -228,6 +197,7 @@ func main() {
 		for scanner.Scan() {
 			lines = append(lines, scanner.Text())
 		}
+
 		fmt.Println(lines[1])
 	}
 
